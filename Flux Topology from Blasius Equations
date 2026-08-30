@@ -1,0 +1,142 @@
+import sympy as sp
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# =====================================================================
+# STEP 1: PARSE LAYER 1 - DIMENSIONLESS FLOW SYSTEM (Eq. 4 & 6)
+# =====================================================================
+# Define core continuous variables and parameters
+w, x, y, u1, u2, u3 = sp.symbols('w x y u1 u2 u3')
+cJ, cR, c, alpha, L_K, w_Gamma = sp.symbols('cJ cR c alpha L_K w_Gamma')
+L, T, Cext, f_y = sp.symbols('L T Cext f_y')
+T_tilde, T0, delta = sp.symbols('T_tilde T0 delta')
+epsilon = sp.symbols('epsilon')
+
+# Verbatim Dimensionless Flows (Equation 6)
+u1_expr = c * x - f_y * T * y
+u2_expr = w / x - x
+# Respiration separated out to capture contextual inhibition rules explicitly
+respiration_expr = cR * (L_K * w_Gamma) / (L + L_K * w + w_Gamma)
+u3_expr = cJ * (Cext - w) / sp.exp(alpha * w) - L * w + respiration_expr
+
+# Master Derivatives Layer (Equation 2 Grouping applied to dimensionless rules)
+w_dot = (-u2 + u3) / epsilon
+x_dot = (-u1 + u2) / epsilon
+y_dot = u1
+
+# Relative Temperature Approximation (Equation 4)
+T_expr = (T_tilde - T0) / delta
+
+# Build Layer 1 Topology Graph
+G1 = nx.DiGraph()
+fluxes = {u1: u1_expr, u2: u2_expr, u3: u3_expr}
+state_vars = [w, x, y]
+env_params = [L, Cext, f_y] # T will link dynamically through Eq 4
+
+# Extract dependencies for flows from equations
+for flux_node, expr in fluxes.items():
+    for var in state_vars + env_params:
+        if var in expr.free_symbols:
+            G1.add_edge(str(var), str(flux_node), layer="Dimensionless_Flow")
+
+# Handle Temperature calculation routing explicitly
+for var in [T_tilde, T0, delta]:
+    if var in T_expr.free_symbols:
+        G1.add_edge(str(var), "T", layer="Temperature_Forcing")
+G1.add_edge("T", "u1", layer="Dimensionless_Flow")
+
+# Map explicit update flow dependencies to derivatives
+for i, state in enumerate(state_vars):
+    deriv_expr = [w_dot, x_dot, y_dot][i]
+    for flux in fluxes.keys():
+        if flux in deriv_expr.free_symbols:
+            G1.add_edge(str(flux), str(state), layer="Derivative_Updates")
+
+# Add targeted sub-node parsing to capture respiration properties
+for var in [cR, L_K, w_Gamma, L, w]:
+    if var in respiration_expr.free_symbols:
+        G1.add_edge(str(var), "Respiration_Term", layer="Inhibition_Context")
+G1.add_edge("Respiration_Term", "u3", layer="Dimensionless_Flow")
+
+
+# =====================================================================
+# STEP 2: PARSE LAYER 2 - DIMENSIONLESS TRANSFORMATION MATRIX (Eq. 5)
+# =====================================================================
+# Define unscaled raw inputs from the paper appendix
+x_raw, y_raw, w_raw, t_raw, f_raw, T_raw, L_raw, Cext_raw, epsilon_raw, alpha_raw, L_K_raw, w_Gamma_raw = sp.symbols(
+    'x_raw y_raw w_raw t_raw f_raw T_raw L_raw Cext_raw epsilon_raw alpha_raw L_K_raw w_Gamma_raw'
+)
+c3, c4, c2, f1, c6, ymin = sp.symbols('c3 c4 c2 f1 c6 ymin')
+
+# Map the exact translation relationships specified in Equation 5
+transformation_rules = {
+    "x": (c4 / c3) * x_raw,
+    "y": (c4 / (c3 * ymin)) * y_raw,
+    "w": (c4 / c3) * w_raw,
+    "f_y": f_raw / f1,
+    "T": (c2 * c6 * ymin / (c3 * f1)) * T_raw,
+    "L": (c6 / c4) * L_raw,
+    "Cext": (c4 / c3) * Cext_raw,
+    "epsilon": (c3 / (c4 * ymin)) * epsilon_raw,
+    "alpha": (c3 / c4) * alpha_raw,
+    "L_K": (c6 / c4) * L_K_raw,
+    "w_Gamma": (c4 / c3) * w_Gamma_raw
+}
+
+# Build Layer 2 Topology Graph
+G2 = nx.DiGraph()
+for dimensionless_target, scaling_expr in transformation_rules.items():
+    for raw_symbol in scaling_expr.free_symbols:
+        # Edge points from unscaled parameters to the scaled network tokens
+        G2.add_edge(str(raw_symbol), dimensionless_target, layer="Scale_Transformation")
+
+
+# =====================================================================
+# STEP 3: AUTOMATED TOPOLOGY FUSION ENGINE
+# =====================================================================
+# Compose combines both graphs, merging any nodes that share the exact same name
+Full_Topology = nx.compose(G1, G2)
+
+print(f"Layer 1 Nodes: {G1.number_of_nodes()} | Layer 2 Nodes: {G2.number_of_nodes()}")
+print(f"Successfully Fused Full Network Topology! Total Combined Nodes: {Full_Topology.number_of_nodes()}")
+
+
+# =====================================================================
+# STEP 4: VISUAL GRAPH LAYOUT LOOKUP
+# =====================================================================
+plt.figure(figsize=(12, 10))
+
+# Automated force layout grouping based on unified global connectivity metrics
+combined_layout = nx.spring_layout(Full_Topology, k=0.8, seed=42)
+
+# Generate node styling groups based on their structural role in the merged graph
+node_colors = []
+for node in Full_Topology.nodes():
+    if node in ['w', 'x', 'y']:
+        node_colors.append('#3498db')  # Blue for main dynamic pools
+    elif node in ['u1', 'u2', 'u3', 'Respiration_Term']:
+        node_colors.append('#e67e22')  # Orange for continuous reaction loops
+    elif 'raw' in node or node in ['c2', 'c3', 'c4', 'c6', 'ymin', 'f1']:
+        node_colors.append('#9b59b6')  # Purple for unscaled background metrics (Layer 2)
+    else:
+        node_colors.append('#2ecc71')  # Green for dimensionless modifiers / parameter interfaces
+
+# Define edge color paths based on structural origin layers
+edge_colors = []
+for u, v, data in Full_Topology.edges(data=True):
+    if data.get('layer') == "Scale_Transformation":
+        edge_colors.append('#af7ac5')  # Light purple for scale conversion edges
+    elif data.get('layer') == "Inhibition_Context":
+        edge_colors.append('#e74c3c')  # Red for respiration control channels
+    else:
+        edge_colors.append('#bdc3c7')  # Gray for core calculation routes
+
+# Render the complete unified system map
+nx.draw_networkx_nodes(Full_Topology, pos=combined_layout, node_size=900, node_color=node_colors, edgecolors="black")
+nx.draw_networkx_labels(Full_Topology, pos=combined_layout, font_size=8, font_weight="bold")
+nx.draw_networkx_edges(Full_Topology, pos=combined_layout, edge_color=edge_colors, width=1.2, arrowsize=12)
+
+plt.title("Full Interconnected Topology Skeleton: Layer 1 & Layer 2 Automatically Unified", fontsize=12, pad=20)
+plt.axis("off")
+plt.tight_layout()
+plt.show()
