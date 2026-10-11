@@ -1,5 +1,4 @@
-
-K. Pinnata Matrix
+#K. Pinnata Matrix
 
 Here you will notice that there is currently no code to go along with this project. This is because the code for this work will take a while to produce. I’m currently mathematically deriving the framework by hand, and I realize now that there’s a lot of equations I still need to find, mainly from scientific papers of which most of the frameworks can be found.
 
