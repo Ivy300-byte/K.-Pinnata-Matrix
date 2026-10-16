@@ -8,4 +8,4 @@ Here you will notice that there is not much code to go along with this project a
 While there may not be much code to present at this time, There is currently all the iterations I’ve made for the work going back all they to its origins up the where it is now.
 
 
-I would like to take a moment add not that I used Google Gemini to help with Code syntax and technical instantiation of my methodology and work. All produced output has been cross-verified by scientific sources for accurate representation of material and current data.
+I would like to take a moment to mention that I used Google Gemini to help with Code syntax and technical instantiation of my methodology and work. All produced output has been cross-verified by scientific sources for accurate representation of material and current data.
